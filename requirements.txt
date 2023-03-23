@@ -1,0 +1,3 @@
+frida-tools
+psutil
+pywin32
