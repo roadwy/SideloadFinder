@@ -9,7 +9,9 @@ A simple script which automates the process of discovering and exploiting DLL Hi
 ```
 sideload_finder.py  -i  testcase -o out.csv
 
-ae90c0a08698d698182043ede236e528.exe,wsc.dll,0x0
+{'type': 'send', 'payload': {'payload_type': 'dll', 'dll': 'wsc.dll', 'flag': 0}}
+{'type': 'send', 'payload': {'payload_type': 'proc', 'proc': '_run@4'}}
+ae90c0a08698d698182043ede236e528.exe,wsc.dll,0x0,_run@4
 ```
 
 <p align="center">
