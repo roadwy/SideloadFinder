@@ -1,3 +1,4 @@
 frida-tools
 psutil
 pywin32
+pefile

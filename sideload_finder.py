@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # https://github.com/geemion
-
+import json
 import frida
 import subprocess
 from win32process import CREATE_SUSPENDED
 import psutil
 import os
+import sys
+import pefile
 import argparse
 
 
@@ -31,7 +33,7 @@ Interceptor.attach(LoadLibraryEx, {
     onLeave: function(retval, state) {
         if (retval == 0) {
             if (this.dwFlags != 2) {
-                send({"payload_type":"dll", "dll":this.lpLibFileName, "flag":this.dwFlags});
+                send({"payload_type":"dll", "dll":this.lpLibFileName, "flag":this.dwFlags, "type": "dynamic"});
                 retval.replace(FakeModule);
             }
         }
@@ -64,7 +66,7 @@ Interceptor.attach(GetProcAddress, {
         flag = message["payload"]["flag"]
         if flag & self.LOAD_LIBRARY_AS_IMAGE_RESOURCE:
             return
-        self.line_content = "{},{},0x{:x}".format(self.image_path, message["payload"]["dll"], flag)
+        self.line_content = "{},{},{},0x{:x}".format(message["payload"]["type"], self.image_path, message["payload"]["dll"], flag)
 
     def handle_proc_msg(self, message):
         proc = message["payload"]["proc"]
@@ -79,7 +81,7 @@ Interceptor.attach(GetProcAddress, {
             print(self.line_content)
             self.line_content = ""
 
-    def finder(self, image_path):
+    def dynamic_finder(self, image_path):
         try:
             self.image_path = image_path
             pid = subprocess.Popen(self.image_path, creationflags=CREATE_SUSPENDED).pid
@@ -100,6 +102,38 @@ Interceptor.attach(GetProcAddress, {
         finally:
             self.out_csv()
 
+    def is_dll_exist(self, image_path, dll_name):
+        cur_dir = os.path.dirname(image_path)
+        windir = os.getenv("windir")
+        sys32dir = os.path.join(windir, "system32")
+        path_dirs = os.getenv("PATH")
+        search_dirs = path_dirs.split(";")
+        search_dirs.extend([cur_dir, windir, sys32dir])
+        for dir in search_dirs:
+            dll_path = os.path.join(dir, dll_name)
+            if os.path.exists(dll_path):
+                return True
+        return False
+
+    def static_finder(self, image_path):
+        try:
+            self.image_path = image_path
+            pe = pefile.PE(image_path)
+            for dll in pe.DIRECTORY_ENTRY_IMPORT:
+                dll_name = str(dll.dll, encoding='ansi')
+                if not self.is_dll_exist(image_path, dll_name):
+                    msg = '{"type": "send", "payload": {"payload_type": "dll", "dll":"'+ dll_name + '", "flag": 0, "type":"static"}}'
+                    self.on_message(json.loads(msg), "")
+                    print(dll_name)
+        except Exception as e:
+            print(e)
+        finally:
+            self.out_csv()
+    
+    def finder(self, image_path):
+        self.static_finder(image_path)
+        self.dynamic_finder(image_path)
+
     def run(self, image_dir):
         for parent, _, filenames in os.walk(image_dir):
             for filename in filenames:
@@ -116,9 +150,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if not args.i or not args.o:
         parser.print_help()
-        exit(1)
+        sys.exit()
     out_path = args.o
     image_dir = args.i
-    finder = SideLoadFinder(out_path, 5)
+    finder = SideLoadFinder(out_path, 2)
     finder.run(image_dir)
 
